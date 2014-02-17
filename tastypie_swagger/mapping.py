@@ -72,6 +72,8 @@ class ResourceSwaggerMapping(object):
         self.schema = self.resource.build_schema()
 
     def get_pk_type(self):
+        if not hasattr(self.resource._meta.object_class._meta, 'pk'):
+            return 'string'
         django_internal_type = self.resource._meta.object_class._meta.pk.get_internal_type()
         if django_internal_type in ('ManyToManyField', 'OneToOneField', 'ForeignKey'):
             return DJANGO_FIELD_TYPE.get(self.resource._meta.object_class._meta.pk.related_field, 'unknown')
@@ -275,14 +277,15 @@ class ResourceSwaggerMapping(object):
                 name=self._detail_uri_name(),
                 dataType=self.resource_pk_type,
                 description='Primary key of resource'))
-        for name, field in fields.items():
-            parameters.append(self.build_parameter(
-                paramType="query",
-                name=name,
-                dataType=field.get("type", "string"),
-                required=field.get("required", True),
-                description=force_unicode(field.get("description", "")),
-            ))
+
+        # for name, field in fields.items():
+        #     parameters.append(self.build_parameter(
+        #         paramType="query",
+        #         name=name,
+        #         dataType=field.get("type", "string"),
+        #         required=field.get("required", True),
+        #         description=force_unicode(field.get("description", "")),
+        #     ))
 
         # For non-standard API functionality, allow the User to declaritively
         # define their own filters, along with Swagger endpoint values.
@@ -332,16 +335,25 @@ class ResourceSwaggerMapping(object):
     def build_extra_operation(self, extra_action):
         if "name" not in extra_action:
             raise LookupError("\"name\" is a required field in extra_actions.")
+        fields = extra_action.get('fields', {})
+        parameters = self.build_parameters_from_extra_action(
+            method=extra_action.get('http_method'),
+            # Default fields to an empty dictionary in the case that it
+            # is not set.
+            fields=fields,
+            resource_type=extra_action.get("resource_type", "view"))
+        if fields:
+            parameters.append(self.build_parameter(
+                name=extra_action.get("name"),
+                dataType="%s_%s" % (self.resource_name, extra_action.get("name")),
+                required=True,
+            ))
+
         return {
             'summary': extra_action.get("summary", ""),
             'httpMethod': extra_action.get('http_method', "get").upper(),
-            'parameters': self.build_parameters_from_extra_action(
-                method=extra_action.get('http_method'),
-                # Default fields to an empty dictionary in the case that it
-                # is not set.
-                fields=extra_action.get('fields', {}),
-                resource_type=extra_action.get("resource_type", "view")),
-            'responseClass': 'Object', #TODO this should be extended to allow the creation of a custom object.
+            'parameters': parameters,
+            'responseClass': self.resource_name,
             'nickname': extra_action['name'],
         }
 
@@ -391,7 +403,7 @@ class ResourceSwaggerMapping(object):
                 }
 
                 if extra_action.get("resource_type", "view") == "list":
-                    extra_api['path'] = "%s%s/" % (self.get_resource_base_uri(), extra_action.get('name'))
+                    extra_api['path'] = "%s/%s/" % (self.get_resource_base_uri(), extra_action.get('name'))
 
                 operation = self.build_extra_operation(extra_action)
                 extra_api['operations'].append(operation)
@@ -515,6 +527,29 @@ class ResourceSwaggerMapping(object):
 
         return models
 
+    def build_properties_from_extra_fields(self, fields, method='get'):
+        properties = {}
+
+        for name, field in fields.items():
+            # Exclude fields from custom put / post object definition
+            if method in ['post', 'put']:
+                if name in self.WRITE_ACTION_IGNORED_FIELDS:
+                    continue
+                if field.get('readonly'):
+                    continue
+            # Deal with default format
+            elif isinstance(field.get('default'), datetime.datetime):
+                field['default'] = field.get('default').isoformat()
+
+            properties.update(self.build_property(
+                name,
+                field.get('type'),
+                # note: 'help_text' is a Django proxy which must be wrapped
+                # in unicode *specifically* to get the actual help text.
+                force_unicode(field.get('description', '')),)
+            )
+        return properties
+
     def build_models(self):
         #TODO this should be extended to allow the creation of a custom objects for extra_actions.
         models = {}
@@ -540,6 +575,16 @@ class ResourceSwaggerMapping(object):
                     id='%s_put' % self.resource_name
                 )
             )
+
+        if hasattr(self.resource._meta, 'extra_actions'):
+            for action in self.resource._meta.extra_actions:
+                models.update(self.build_model(
+                    resource_name="%s_%s" % (
+                        self.resource._meta.resource_name, action.get("name")),
+                    properties=self.build_properties_from_extra_fields(
+                        action.get("fields"), method=action.get("http_method")),
+                    id='%s_%s' % (
+                        self.resource._meta.resource_name, action.get("name"))))
 
         # Actually add the related model
         models.update(
