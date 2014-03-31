@@ -51,7 +51,7 @@
                 apiKey:"special-key",
                 dom_id:"swagger-ui-container",
                 supportHeaderParams: false,
-                supportedSubmitMethods: ['get', 'post', 'put'],
+                supportedSubmitMethods: ['get', 'post', 'put', 'patch', 'delete'],
                 onComplete: function(swaggerApi, swaggerUi){
                     $("img[src$='throbber.gif']").attr("src", "{{ STATIC_URL }}tastypie_swagger/images/throbber.gif");
                     if(console) {
@@ -77,7 +77,7 @@
 </head>
 
 <body>
-<!--div id='header'>
+<div id='header'>
     <div class="swagger-ui-wrap">
         <a id="logo" href="http://swagger.wordnik.com">swagger</a>
 
@@ -88,13 +88,13 @@
             <div class='input icon-btn'>
                 <img id="show-wordnik-dev-icon" src="{{ STATIC_URL }}tastypie_swagger/images/wordnik_api.png" title="Show Wordnik Developer Apis">
             </div>
-            <div class='input'><input placeholder="http://example.com/api" id="input_baseUrl" name="baseUrl"
+            <div class='input'><input placeholder="/api/doc/resources/" id="input_baseUrl" name="baseUrl"
                                       type="text"/></div>
             <div class='input'><input placeholder="api_key" id="input_apiKey" name="apiKey" type="text"/></div>
             <div class='input'><a id="explore" href="#">Explore</a></div>
         </form>
     </div>
-</div-->
+</div>
 
 <div id="message-bar" class="swagger-ui-wrap">
     &nbsp;
